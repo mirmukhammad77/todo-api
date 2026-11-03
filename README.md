@@ -1,146 +1,282 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Todo API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A REST API for creating, listing, updating, and deleting todos. Built with NestJS
+and TypeScript, backed by Amazon DynamoDB, with Terraform infrastructure and a
+GitHub Actions deployment workflow for AWS EC2.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Each todo has a UUID, a title, a completion flag, and creation/update timestamps.
+The API validates requests, supports cursor-based pagination, and exposes a
+health endpoint that does not query the database.
 
-## Description
+## Technology stack
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| Area           | Tools                                              |
+| -------------- | -------------------------------------------------- |
+| Runtime        | Node.js 24, matching CI                            |
+| Application    | NestJS 12, TypeScript 6, Express                   |
+| Persistence    | DynamoDB, AWS SDK for JavaScript v3                |
+| Validation     | `class-validator`, `class-transformer`             |
+| Checks         | Vitest, Supertest, Oxlint                          |
+| Infrastructure | Terraform, AWS VPC, ALB, EC2, IAM, Systems Manager |
+| CI/CD          | GitHub Actions                                     |
 
-## Project setup
+## Local development
 
-```bash
-$ npm install
+You need Node.js 24, npm, AWS credentials, and a DynamoDB table with a string
+partition key named `id`. The Terraform configuration defines the `todos` table
+in `ap-southeast-2`.
+
+Install dependencies:
+
+```sh
+npm ci
 ```
 
-## Compile and run the project
+Create a `.env` file in the repository root:
 
-### DynamoDB permissions
-
-The API's AWS identity must have permission to create, read, list, update, and
-delete items in the configured table. The policy in
-[`infra/dynamodb-policy.json`](infra/dynamodb-policy.json) grants these five
-operations on `todos` in account `094842496096`, region `ap-southeast-2`.
-Change its resource ARN if you use a different account, region, or table.
-
-To resolve `AccessDeniedException` for `userA`, sign in to the AWS console using
-an identity with permission to manage that user's policies:
-
-1. Open **IAM > Users > userA > Permissions > Add permissions > Create inline policy**.
-2. Select **JSON** and paste the contents of `infra/dynamodb-policy.json`.
-3. Review and save the policy as `TodoTableAccess`.
-4. Retry the failed API request after the IAM change propagates.
-
-Alternatively, with the AWS CLI configured for an identity that can manage
-`userA`'s policies, run this from the project root:
-
-```powershell
-aws iam put-user-policy --user-name userA --policy-name TodoTableAccess --policy-document file://infra/dynamodb-policy.json
+```dotenv
+AWS_REGION=ap-southeast-2
+DYNAMODB_TABLE_NAME=todos
+PORT=3000
 ```
 
-The policy file alone does not change AWS permissions; it must be attached in AWS.
-The application uses the AWS SDK's default credential provider chain, so attach
-the policy to the identity the application actually uses (shown in the error).
-See [AWS's DynamoDB identity-based policy documentation](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/using-identity-based-policies.html).
+| Variable              | Required | Purpose                               |
+| --------------------- | -------- | ------------------------------------- |
+| `AWS_REGION`          | Yes      | Region containing the DynamoDB table. |
+| `DYNAMODB_TABLE_NAME` | Yes      | Table used for todos.                 |
+| `PORT`                | No       | HTTP port; defaults to `3000`.        |
 
-```bash
-# development
-$ npm run start
+The AWS SDK uses its default credential provider chain. For local development,
+use a configured AWS profile or AWS credential environment variables. On EC2,
+the application uses the attached instance role. Keep credentials out of source
+control; `.env` is ignored by Git.
 
-# watch mode
-$ npm run start:dev
+The application's AWS identity needs `dynamodb:PutItem`, `dynamodb:GetItem`,
+`dynamodb:Scan`, `dynamodb:UpdateItem`, and `dynamodb:DeleteItem` on the configured
+table. The EC2 policy is defined in [`infra/iam.tf`](infra/iam.tf). For local
+development, grant equivalent permissions to your development identity. An
+`AccessDeniedException` means the identity used by the SDK lacks the required
+access.
 
-# production mode
-$ npm run start:prod
+Start the API with automatic reload:
+
+```sh
+npm run dev
 ```
 
-## Run tests
+The default base URL is `http://localhost:3000`. Check that it is running:
 
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+```sh
+curl http://localhost:3000/health
 ```
 
-## Deployment
+Expected response: `{"status":"ok"}`. Todo operations also require access to the
+configured DynamoDB table.
 
-For Terraform-managed AWS networking, private EC2 hosting, adoption of the existing
-DynamoDB table, and GitHub Actions deployment, follow
-[`infra/README.md`](infra/README.md).
+## API
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+| Method   | Route                           | Behavior                                                    | Success status |
+| -------- | ------------------------------- | ----------------------------------------------------------- | -------------- |
+| `GET`    | `/health`                       | Return application health without querying DynamoDB.        | `200`          |
+| `POST`   | `/todos`                        | Create a todo from a `title`.                               | `201`          |
+| `GET`    | `/todos?limit=10&cursor=<uuid>` | Return a page of todos. Both query parameters are optional. | `200`          |
+| `GET`    | `/todos/:id`                    | Fetch one todo.                                             | `200`          |
+| `PATCH`  | `/todos/:id`                    | Update `title`, `completed`, or both.                       | `200`          |
+| `DELETE` | `/todos/:id`                    | Delete a todo; return an empty response.                    | `204`          |
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Create and update
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+Create a todo with this JSON body:
+
+```json
+{
+  "title": "Document the architecture"
+}
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+The response includes the generated UUID and UTC timestamps:
 
-## Observability
+```json
+{
+  "id": "682bca13-9ad3-40cb-bbc8-b849807caaf5",
+  "title": "Document the architecture",
+  "completed": false,
+  "createdAt": "2026-11-03T10:00:00.000Z",
+  "updatedAt": "2026-11-03T10:00:00.000Z"
+}
+```
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+Use the returned `id` in subsequent requests. For example,
+`PATCH /todos/682bca13-9ad3-40cb-bbc8-b849807caaf5` accepts:
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+```json
+{
+  "completed": true
+}
+```
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+`title` must be a non-empty string, and `completed` must be a boolean. Updates
+must include at least one of those fields. IDs and pagination cursors must be
+UUID v4 values. Unknown body or query fields are rejected. Invalid requests
+return `400`; fetching, updating, or deleting a missing todo returns `404`.
 
-## Resources
+### Pagination
 
-Check out a few resources that may come in handy when working with NestJS:
+`GET /todos` returns `{ "items": [...], "nextCursor": "<uuid>" }`.
+The default `limit` is `10`; accepted values are integers from `1` to `100`.
+Pass the returned `nextCursor` as the next request's `cursor`. A `null` cursor
+means there are no more pages.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Listing uses a DynamoDB scan and does not guarantee item order.
 
-## Support
+## Development commands
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+| Command              | Purpose                                         |
+| -------------------- | ----------------------------------------------- |
+| `npm run dev`        | Run with automatic reload.                      |
+| `npm start`          | Start through the Nest CLI.                     |
+| `npm run build`      | Compile the application into `dist/`.           |
+| `npm run start:prod` | Run the compiled application; build first.      |
+| `npm run lint`       | Check application and test code with Oxlint.    |
+| `npm run format`     | Format application and test TypeScript files.   |
+| `npm test`           | Run the configured unit-test suite with Vitest. |
+| `npm run test:e2e`   | Run the end-to-end test suite.                  |
+| `npm run test:cov`   | Run unit tests with coverage.                   |
 
-## Stay in touch
+The current end-to-end test checks `/health` with the DynamoDB repository
+replaced by a stub, so it does not require AWS access. There are currently no
+unit-test files; `npm test` and `npm run test:cov` need unit tests to be added.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## System architecture
 
-## License
+The Terraform configuration targets AWS in `ap-southeast-2`:
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```mermaid
+flowchart LR
+  client[Client]
+  github[GitHub Actions]
+  internet[Internet / package downloads]
+  subgraph aws["AWS - ap-southeast-2"]
+    ssm[Systems Manager]
+    table[("DynamoDB - todos")]
+    subgraph vpc["VPC - 10.0.0.0/16"]
+      subgraph public["Two public subnets - two availability zones"]
+        alb[Public Application Load Balancer]
+        nat["NAT gateway - first public subnet"]
+      end
+      igw[Internet gateway]
+      subgraph private["Private subnet - 10.0.10.0/24 - first availability zone"]
+        ec2["EC2 - NestJS API - t3.micro"]
+      end
+      endpoint[DynamoDB gateway endpoint]
+    end
+  end
+  client -->|HTTP :80| alb
+  alb -->|HTTP :80 / health check : /todos| ec2
+  ec2 -->|Table operations| endpoint
+  endpoint --> table
+  ec2 -->|Outbound internet| nat
+  nat --> igw
+  igw --> internet
+  github -.->|Run Command| ssm
+  ssm -.->|Deploy| ec2
+```
+
+The detailed resource diagram below is generated directly from the Terraform
+configuration in [`infra/`](infra/) using
+[InfraMap](https://github.com/cycloidio/inframap) and
+[Graphviz](https://graphviz.org/). [Open the full-size image](docs/architecture.svg)
+to inspect individual resources. Arrows in this image indicate Terraform
+dependencies; the system diagram above shows traffic and deployment paths.
+
+![Terraform-generated AWS architecture showing the load balancer, private EC2 instance, DynamoDB, and supporting networking](docs/architecture.svg)
+
+| Component                 | Responsibility                                                                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| VPC                       | `10.0.0.0/16`, with two public subnets in different availability zones and one private subnet (`10.0.10.0/24`) in the first zone.                                                        |
+| Application Load Balancer | Accepts public HTTP on port `80` across both public subnets and forwards requests to EC2 on port `80`. Checks `/todos` for health.                                                       |
+| EC2                       | One `t3.micro` instance hosts the API in the private subnet, with no public IP. Its security group accepts HTTP only from the ALB security group.                                        |
+| DynamoDB                  | The `todos` table stores items with a string `id` partition key and on-demand billing. EC2 accesses it through a DynamoDB gateway VPC endpoint associated with the private route table.  |
+| NAT and internet gateways | The private subnet routes outbound internet traffic through a NAT gateway in the first public subnet, then through the VPC internet gateway.                                             |
+| IAM and deployment        | The EC2 instance profile grants access to the `todos` table and Systems Manager. The [GitHub Actions workflow](.github/workflows/ci-cd.yml) deploys through Systems Manager Run Command. |
+
+Request path: **Client → public ALB → private EC2 API → DynamoDB gateway endpoint → `todos` table**.
+The deployment uses a single EC2 instance; only the ALB spans two availability zones.
+
+### Regenerate the diagram
+
+Install [InfraMap v0.8.0](https://github.com/cycloidio/inframap/releases/tag/v0.8.0)
+and [Graphviz](https://graphviz.org/download/), then run from the repository root:
+
+```sh
+inframap generate --hcl --raw --clean=false --show-icons=false ./infra | dot -Tsvg -Grankdir=LR -Gpad=0.25 -o docs/architecture.svg
+```
+
+Commit the updated image with changes to `infra/*.tf`. Generation reads the local
+Terraform source and does not require AWS credentials or a Terraform deployment.
+`--raw` preserves IAM, routing, and VPC endpoint resources. Counted resources
+appear as a single resource block in the generated graph. Update the system
+overview above when changing runtime traffic or deployment paths.
+
+## Infrastructure and deployment
+
+The [`infra/`](infra/) directory defines networking, EC2, IAM, the load balancer,
+and DynamoDB. It requires Terraform `>= 1.6.0, < 2.0.0`, the AWS provider `~> 6.0`,
+and an AWS identity with permission to manage those resources.
+
+Review and provision the infrastructure from the repository root:
+
+```sh
+terraform -chdir=infra init
+terraform -chdir=infra plan
+terraform -chdir=infra apply
+```
+
+If the `todos` table already exists in the target account and region and is not
+in this Terraform state, import it before applying:
+
+```sh
+terraform -chdir=infra import aws_dynamodb_table.todos todos
+```
+
+Terraform outputs `api_url`, `instance_id`, `private_ip`, and `table_name`.
+The EC2 resource does not configure Node.js, the application process, or the
+deployment helper. Prepare the instance with the application environment,
+the SSM agent, and `/usr/local/bin/deploy-todo-api`. The application must be
+reachable on EC2 port `80`, either directly or through a reverse proxy, to match
+the ALB target group; local development defaults to port `3000`.
+
+The [CI/CD workflow](.github/workflows/ci-cd.yml) installs dependencies, lints,
+and builds on pull requests and pushes to `main`. Its test step is currently
+commented out. After CI succeeds, pushes to `main` and manual runs on `main`
+deploy through Systems Manager Run Command.
+
+Configure these GitHub repository settings:
+
+| Setting                 | Type     | Purpose                                                   |
+| ----------------------- | -------- | --------------------------------------------------------- |
+| `AWS_ACCESS_KEY_ID`     | Secret   | AWS identity used by the deployment workflow.             |
+| `AWS_SECRET_ACCESS_KEY` | Secret   | Secret key for that identity.                             |
+| `EC2_INSTANCE_ID`       | Variable | Target EC2 instance, available from the Terraform output. |
+
+The deployment identity must be able to send SSM commands to the instance and
+read their results. The workflow invokes
+`/usr/local/bin/deploy-todo-api <commit-sha>` on the instance and waits for its
+result. That helper script is not included in this repository.
+
+## Project structure
+
+```text
+src/
+  main.ts                    Application bootstrap and request validation
+  app.controller.ts          GET /health
+  modules/todos/
+    dtos/                    Request validation
+    todo.controller.ts       Todo HTTP routes
+    todo.service.ts          Todo operations and not-found handling
+    todo.repository.ts       DynamoDB operations and pagination
+test/                        End-to-end tests
+infra/                       Terraform infrastructure
+docs/architecture.svg        Generated Terraform resource diagram
+.github/workflows/ci-cd.yml   CI and EC2 deployment
+```
